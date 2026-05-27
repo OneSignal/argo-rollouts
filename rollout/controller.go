@@ -18,7 +18,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -468,31 +467,25 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 }
 
 // writeBackToInformer writes a just recently updated Rollout back into the informer cache.
-// This prevents the situation where the controller operates on a stale rollout and repeats work
+// This prevents the situation where the controller operates on a stale rollout and repeats work.
+// The object is stored as the typed Rollout (not unstructured) so it remains type-consistent
+// with the rest of the cache, which is populated via the tolerantinformer transform.
 func (c *Controller) writeBackToInformer(ro *v1alpha1.Rollout) {
 	logCtx := logutil.WithRollout(ro)
 	logCtx = logutil.WithVersionFields(logCtx, ro)
-	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(ro)
-	if err != nil {
-		logCtx.Errorf("failed to convert rollout to unstructured: %v", err)
-		return
-	}
-	un := unstructured.Unstructured{Object: obj}
-	// With code-gen tools the argoclientset is generated and the update method here is removing typemetafields
-	// which the notification controller expects when it converts rolloutobject to toUnstructured and if not present
-	// and that throws an error "Failed to process: Object 'Kind' is missing in ..."
-	// Fixing this here as the informer is shared by notification controller by updating typemetafileds.
-	// TODO: Need to revisit this in the future and maybe we should have a dedicated informer for notification
-	gvk := un.GetObjectKind().GroupVersionKind()
+	// The argo-rollouts generated clientset strips TypeMeta during Update calls, but the
+	// notification controller's ToUnstructured conversion expects apiVersion/kind to be set
+	// (otherwise: "Failed to process: Object 'Kind' is missing in ..."). Repopulate it here.
+	// TODO: revisit by giving notifications its own informer.
+	gvk := ro.GetObjectKind().GroupVersionKind()
 	if len(gvk.Version) == 0 || len(gvk.Group) == 0 || len(gvk.Kind) == 0 {
-		un.GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{
+		ro.GetObjectKind().SetGroupVersionKind(schema.GroupVersionKind{
 			Group:   v1alpha1.SchemeGroupVersion.Group,
 			Kind:    rollouts.RolloutKind,
 			Version: v1alpha1.SchemeGroupVersion.Version,
 		})
 	}
-	err = c.rolloutsInformer.GetStore().Update(&un)
-	if err != nil {
+	if err := c.rolloutsInformer.GetStore().Update(ro); err != nil {
 		logCtx.Errorf("failed to update informer store: %v", err)
 		return
 	}
