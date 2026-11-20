@@ -6,7 +6,7 @@ import {NamespaceContext, RolloutAPIContext} from '../../shared/context/api';
 
 import './header.scss';
 import {Link, useHistory} from 'react-router-dom';
-import {AutoComplete, Button, Input, notification, Tooltip} from 'antd';
+import {Button, Input, notification, Select, Tooltip} from 'antd';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {faBook, faKeyboard} from '@fortawesome/free-solid-svg-icons';
 
@@ -18,7 +18,6 @@ export const Header = (props: {pageHasShortcuts: boolean; changeNamespace: (val:
     const {namespace} = useParams<{namespace: string}>();
     const api = React.useContext(RolloutAPIContext);
     const [version, setVersion] = React.useState('v?');
-    const [nsInput, setNsInput] = React.useState(namespaceInfo.namespace);
     const {useKeybinding} = React.useContext(KeybindingContext);
 
     useKeybinding([Key.SHIFT, Key.H], 
@@ -55,7 +54,6 @@ export const Header = (props: {pageHasShortcuts: boolean; changeNamespace: (val:
     React.useEffect(() => {
         if (namespace && namespace != namespaceInfo.namespace) {
             props.changeNamespace(namespace);
-            setNsInput(namespace);
         }
     }, []);
 
@@ -86,20 +84,17 @@ export const Header = (props: {pageHasShortcuts: boolean; changeNamespace: (val:
                     {(namespaceInfo.availableNamespaces || []).length == 0 ? (
                         <Input value={namespaceInfo.namespace} disabled={true} style={{color: 'black', cursor: 'default', backgroundColor: 'white'}} />
                     ) : (
-                        <AutoComplete
+                        <Select
                             style={{width: 200}}
                             className='rollouts-header__namespace-selector'
                             options={(namespaceInfo.availableNamespaces || []).map((ns) => ({label: ns, value: ns}))}
-                            filterOption={true}
-                            allowClear={true}
+                            showSearch={true}
                             placeholder='Namespace'
-                            onChange={(val) => setNsInput(val)}
-                            onSelect={(val) => {
-                                const selectedNamespace = val ? val : nsInput;
-                                props.changeNamespace(selectedNamespace);
-                                history.push(`/${selectedNamespace}`);
+                            onSelect={(val: string) => {
+                                props.changeNamespace(val);
+                                history.push(`/${val}`);
                             }}
-                            value={nsInput}
+                            value={namespaceInfo.namespace}
                         />
                     )}
                 </div>
